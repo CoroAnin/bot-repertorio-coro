@@ -30,6 +30,11 @@ copie INTEGER
 )
 """)
 
+# indice per velocizzare ricerche e ordinamento
+cursor.execute(
+    "CREATE INDEX IF NOT EXISTS idx_titolo ON brani(titolo)"
+)
+
 conn.commit()
 
 # -----------------------
@@ -76,7 +81,10 @@ async def menu_handler(update, context):
 
     if text == "📚 Repertorio":
 
-        cursor.execute("SELECT titolo, autore, copie FROM brani ORDER BY titolo")
+        cursor.execute(
+            "SELECT titolo, autore, copie FROM brani ORDER BY titolo"
+        )
+
         brani = cursor.fetchall()
 
         if not brani:
@@ -89,6 +97,7 @@ async def menu_handler(update, context):
             msg += f"{b[0]} - {b[1]} | copie: {b[2]}\n"
 
         await update.message.reply_text(msg[:4000])
+
 
     elif text == "📊 Statistiche":
 
@@ -105,6 +114,7 @@ async def menu_handler(update, context):
             f"Brani totali: {totale}\nCopie spartiti: {copie}"
         )
 
+
     elif text == "📥 Importa CSV":
 
         attesa_csv[update.effective_user.id] = True
@@ -113,6 +123,7 @@ async def menu_handler(update, context):
             "Invia il file CSV con formato:\n"
             "titolo,autore,copie"
         )
+
 
     elif text == "ℹ️ Info":
 
@@ -125,8 +136,8 @@ FUNZIONI
 Mostra tutti i brani.
 
 Scrivi direttamente:
-• una parola del titolo
-• il nome di un autore
+una parola del titolo
+oppure il nome di un autore
 
 Il bot cercherà automaticamente nel repertorio.
 
@@ -134,7 +145,7 @@ Il bot cercherà automaticamente nel repertorio.
 Inserisce un nuovo brano.
 
 ✏️ Modifica copie
-Aggiorna il numero copie.
+Aggiorna il numero di copie.
 
 🗑 Elimina brano
 Rimuove un brano dal repertorio.
@@ -284,7 +295,10 @@ async def copie(update, context):
 
 async def modifica(update, context):
 
-    cursor.execute("SELECT titolo FROM brani ORDER BY titolo")
+    cursor.execute(
+        "SELECT titolo FROM brani ORDER BY titolo"
+    )
+
     brani = cursor.fetchall()
 
     lista = []
@@ -332,7 +346,11 @@ async def mod_num(update, context):
 
     titolo = context.user_data["titolo_mod"]
 
-    cursor.execute("SELECT copie FROM brani WHERE titolo=?", (titolo,))
+    cursor.execute(
+        "SELECT copie FROM brani WHERE titolo=?",
+        (titolo,)
+    )
+
     copie_attuali = cursor.fetchone()[0]
 
     nuove = max(0, copie_attuali + delta)
@@ -357,7 +375,10 @@ async def mod_num(update, context):
 
 async def elimina(update, context):
 
-    cursor.execute("SELECT titolo FROM brani ORDER BY titolo")
+    cursor.execute(
+        "SELECT titolo FROM brani ORDER BY titolo"
+    )
+
     brani = cursor.fetchall()
 
     lista = []
