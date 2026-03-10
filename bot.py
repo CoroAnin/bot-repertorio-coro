@@ -2,7 +2,8 @@ import sqlite3
 from telegram import ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
-TOKEN = "8796012899:AAGDbOjUP4Pb08SYf3-p6bl4yZ5208e129E"
+import os
+TOKEN = os.getenv("TOKEN")
 
 conn = sqlite3.connect("repertorio.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -126,5 +127,6 @@ app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT, menu_handler))
+
 
 app.run_polling()
