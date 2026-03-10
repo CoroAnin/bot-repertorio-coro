@@ -1,5 +1,7 @@
 import sqlite3
 import os
+import csv
+from io import StringIO
 
 from telegram import ReplyKeyboardMarkup
 from telegram.ext import (
@@ -31,24 +33,26 @@ copie INTEGER
 conn.commit()
 
 # -----------------------
-# MENU PRINCIPALE
+# MENU
 # -----------------------
 
 menu = [
 ["📚 Repertorio", "🔎 Cerca titolo"],
 ["👤 Cerca autore", "➕ Aggiungi"],
-["✏️ Modifica copie", "📊 Statistiche"],
-["ℹ️ Info"]
+["✏️ Modifica copie", "📥 Importa CSV"],
+["📊 Statistiche", "ℹ️ Info"]
 ]
 
 reply_markup = ReplyKeyboardMarkup(menu, resize_keyboard=True)
 
 # -----------------------
-# STATI CONVERSAZIONI
+# STATI
 # -----------------------
 
 TITOLO, AUTORE, COPIE = range(3)
 MOD_TITOLO, MOD_NUM = range(3,5)
+
+attesa_csv = {}
 
 # -----------------------
 # START
@@ -85,7 +89,6 @@ async def menu_handler(update, context):
 
         await update.message.reply_text(msg[:4000])
 
-
     elif text == "📊 Statistiche":
 
         cursor.execute("SELECT COUNT(*) FROM brani")
@@ -101,49 +104,58 @@ async def menu_handler(update, context):
             f"Brani totali: {totale}\nCopie spartiti: {copie}"
         )
 
-
     elif text == "🔎 Cerca titolo":
 
         context.user_data["ricerca"] = "titolo"
         await update.message.reply_text("Scrivi il titolo")
-
 
     elif text == "👤 Cerca autore":
 
         context.user_data["ricerca"] = "autore"
         await update.message.reply_text("Scrivi l'autore")
 
+    elif text == "📥 Importa CSV":
+
+        attesa_csv[update.effective_user.id] = True
+
+        await update.message.reply_text(
+            "Invia il file CSV con formato:\n\n"
+            "titolo,autore,copie"
+        )
 
     elif text == "ℹ️ Info":
 
         msg = """
-Questo bot serve per gestire il repertorio del coro.
+BOT REPERTORIO CORO
 
-FUNZIONI PRINCIPALI
+Funzioni principali
 
 📚 Repertorio
-Mostra tutti i brani con il numero di copie disponibili.
+Mostra tutti i brani con numero copie.
 
 🔎 Cerca titolo
-Trova un brano cercando una parola del titolo.
+Trova brani per titolo.
 
 👤 Cerca autore
-Mostra i brani di un determinato autore.
+Trova brani per autore.
 
 ➕ Aggiungi
-Permette di inserire un nuovo brano nel repertorio.
+Inserisce un nuovo brano.
 
 ✏️ Modifica copie
-Permette di aggiungere o togliere copie degli spartiti.
+Aggiorna il numero copie.
+
+📥 Importa CSV
+Permette di caricare molti brani da file CSV.
 
 📊 Statistiche
-Mostra il numero totale di brani e di spartiti disponibili.
+Mostra numero totale brani e copie.
 """
 
         await update.message.reply_text(msg)
 
 # -----------------------
-# RICERCHE
+# RICERCA
 # -----------------------
 
 async def ricerca(update, context):
@@ -185,6 +197,51 @@ async def ricerca(update, context):
     context.user_data.pop("ricerca")
 
 # -----------------------
+# IMPORT CSV
+# -----------------------
+
+async def importa_csv(update, context):
+
+    user = update.effective_user.id
+
+    if user not in attesa_csv:
+        return
+
+    file = await update.message.document.get_file()
+    contenuto = await file.download_as_bytearray()
+
+    testo = contenuto.decode("utf-8")
+
+    reader = csv.DictReader(StringIO(testo))
+
+    count = 0
+
+    for row in reader:
+
+        titolo = row["titolo"]
+        autore = row["autore"]
+
+        try:
+            copie = int(row["copie"])
+        except:
+            continue
+
+        cursor.execute(
+            "INSERT INTO brani (titolo, autore, copie) VALUES (?, ?, ?)",
+            (titolo, autore, copie)
+        )
+
+        count += 1
+
+    conn.commit()
+
+    attesa_csv.pop(user)
+
+    await update.message.reply_text(
+        f"Importazione completata: {count} brani caricati."
+    )
+
+# -----------------------
 # AGGIUNTA BRANO
 # -----------------------
 
@@ -214,29 +271,19 @@ async def copie(update, context):
 
     if not testo.isdigit():
 
-        await update.message.reply_text(
-            "Il numero copie deve essere un numero."
-        )
-
+        await update.message.reply_text("Il numero copie deve essere un numero.")
         return COPIE
 
     copie = int(testo)
 
-    titolo = context.user_data["titolo"]
-    autore = context.user_data["autore"]
-
-    cursor.execute("""
-    INSERT INTO brani
-    (titolo, autore, copie)
-    VALUES (?, ?, ?)
-    """, (titolo, autore, copie))
+    cursor.execute(
+        "INSERT INTO brani (titolo, autore, copie) VALUES (?, ?, ?)",
+        (context.user_data["titolo"], context.user_data["autore"], copie)
+    )
 
     conn.commit()
 
-    await update.message.reply_text(
-        "Brano salvato!",
-        reply_markup=reply_markup
-    )
+    await update.message.reply_text("Brano salvato!", reply_markup=reply_markup)
 
     return ConversationHandler.END
 
@@ -248,10 +295,6 @@ async def modifica(update, context):
 
     cursor.execute("SELECT titolo FROM brani ORDER BY titolo")
     brani = cursor.fetchall()
-
-    if not brani:
-        await update.message.reply_text("Archivio vuoto")
-        return ConversationHandler.END
 
     lista = []
     riga = []
@@ -281,27 +324,10 @@ async def mod_titolo(update, context):
 
     titolo = update.message.text
 
-    cursor.execute(
-        "SELECT copie FROM brani WHERE titolo=?",
-        (titolo,)
-    )
-
-    risultato = cursor.fetchone()
-
-    if not risultato:
-
-        await update.message.reply_text(
-            "Brano non trovato",
-            reply_markup=reply_markup
-        )
-
-        return ConversationHandler.END
-
     context.user_data["titolo_mod"] = titolo
 
     await update.message.reply_text(
-        "Quante copie aggiungere o togliere?\n(es: 5 oppure -3)",
-        reply_markup=reply_markup
+        "Quante copie aggiungere o togliere? (es: 5 oppure -3)"
     )
 
     return MOD_NUM
@@ -309,10 +335,8 @@ async def mod_titolo(update, context):
 
 async def mod_num(update, context):
 
-    testo = update.message.text
-
     try:
-        delta = int(testo)
+        delta = int(update.message.text)
     except:
         await update.message.reply_text("Inserisci un numero valido")
         return MOD_NUM
@@ -345,16 +369,6 @@ async def mod_num(update, context):
 
     return ConversationHandler.END
 
-
-async def annulla(update, context):
-
-    await update.message.reply_text(
-        "Operazione annullata",
-        reply_markup=reply_markup
-    )
-
-    return ConversationHandler.END
-
 # -----------------------
 # BOT
 # -----------------------
@@ -371,7 +385,7 @@ conv_add = ConversationHandler(
         COPIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, copie)],
     },
 
-    fallbacks=[CommandHandler("annulla", annulla)]
+    fallbacks=[]
 )
 
 conv_mod = ConversationHandler(
@@ -383,12 +397,15 @@ conv_mod = ConversationHandler(
         MOD_NUM: [MessageHandler(filters.TEXT & ~filters.COMMAND, mod_num)],
     },
 
-    fallbacks=[CommandHandler("annulla", annulla)]
+    fallbacks=[]
 )
 
 app.add_handler(CommandHandler("start", start))
+
 app.add_handler(conv_add)
 app.add_handler(conv_mod)
+
+app.add_handler(MessageHandler(filters.Document.ALL, importa_csv))
 
 app.add_handler(MessageHandler(filters.TEXT, menu_handler))
 app.add_handler(MessageHandler(filters.TEXT, ricerca))
