@@ -1,78 +1,20 @@
 import sqlite3
-from telegram import ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
-
 import os
+
+from telegram import ReplyKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ConversationHandler,
+    filters
+)
+
 TOKEN = os.getenv("TOKEN")
 
-from telegram.ext import ConversationHandler
-TITOLO, AUTORE, VOCI, COPIE = range(6)
-async def aggiungi(update, context):
-
-    await update.message.reply_text("Titolo del brano?")
-    return TITOLO
-
-async def titolo(update, context):
-
-    context.user_data["titolo"] = update.message.text
-    await update.message.reply_text("Autore?")
-    return AUTORE
-
-async def autore(update, context):
-
-    context.user_data["autore"] = update.message.text
-    await update.message.reply_text("Lingua?")
-    return LINGUA
-
-async def voci(update, context):
-
-    context.user_data["voci"] = update.message.text
-    await update.message.reply_text("Tonalità?")
-    return TONALITA
-
-async def copie(update, context):
-
-    copie = update.message.text
-
-    titolo = context.user_data["titolo"]
-    autore = context.user_data["autore"]
-    lingua = context.user_data["lingua"]
-    voci = context.user_data["voci"]
-    tonalita = context.user_data["tonalita"]
-
-    cursor.execute("""
-    INSERT INTO brani
-    (titolo, autore, lingua, voci, tonalita, copie)
-    VALUES (?, ?, ?, ?, ?, ?)
-    """, (titolo, autore, lingua, voci, tonalita, copie))
-
-    conn.commit()
-
-    await update.message.reply_text("Brano salvato!")
-
-    return ConversationHandler.END
-
-async def annulla(update, context):
-
-    await update.message.reply_text("Inserimento annullato")
-    return ConversationHandler.END
-
-conv_handler = ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("➕ Aggiungi"), aggiungi)],
-
-    states={
-
-        TITOLO: [MessageHandler(filters.TEXT & ~filters.COMMAND, titolo)],
-        AUTORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, autore)],
-        LINGUA: [MessageHandler(filters.TEXT & ~filters.COMMAND, lingua)],
-        VOCI: [MessageHandler(filters.TEXT & ~filters.COMMAND, voci)],
-        TONALITA: [MessageHandler(filters.TEXT & ~filters.COMMAND, tonalita)],
-        COPIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, copie)],
-
-    },
-
-    fallbacks=[CommandHandler("annulla", annulla)]
-)
+# -----------------------
+# DATABASE
+# -----------------------
 
 conn = sqlite3.connect("repertorio.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -82,11 +24,7 @@ CREATE TABLE IF NOT EXISTS brani (
 id INTEGER PRIMARY KEY AUTOINCREMENT,
 titolo TEXT,
 autore TEXT,
-lingua TEXT,
 voci TEXT,
-tonalita TEXT,
-difficolta TEXT,
-stagione TEXT,
 copie INTEGER,
 note TEXT,
 link TEXT
@@ -95,21 +33,37 @@ link TEXT
 
 conn.commit()
 
+# -----------------------
+# MENU
+# -----------------------
+
 menu = [
 ["📚 Repertorio", "🔎 Cerca"],
-["👤 Autore", "🎼 Voci"],
 ["➕ Aggiungi", "📊 Statistiche"]
 ]
 
 reply_markup = ReplyKeyboardMarkup(menu, resize_keyboard=True)
 
+# -----------------------
+# STATI CONVERSAZIONE
+# -----------------------
+
+TITOLO, AUTORE, VOCI, COPIE = range(4)
+
+# -----------------------
+# START
+# -----------------------
 
 async def start(update, context):
+
     await update.message.reply_text(
-        "Bot repertorio coro",
+        "Bot repertorio del coro",
         reply_markup=reply_markup
     )
 
+# -----------------------
+# MENU PRINCIPALE
+# -----------------------
 
 async def menu_handler(update, context):
 
@@ -139,6 +93,9 @@ async def menu_handler(update, context):
         cursor.execute("SELECT SUM(copie) FROM brani")
         copie = cursor.fetchone()[0]
 
+        if copie is None:
+            copie = 0
+
         await update.message.reply_text(
             f"Brani totali: {totale}\nCopie spartiti: {copie}"
         )
@@ -149,19 +106,9 @@ async def menu_handler(update, context):
             "Scrivi una parola del titolo"
         )
 
-    elif text == "👤 Autore":
-
-        await update.message.reply_text(
-            "Scrivi il nome dell'autore"
-        )
-
-    elif text == "🎼 Voci":
-
-        await update.message.reply_text(
-            "Scrivi tipo voci (SATB / SSA / TTBB)"
-        )
-        
-
+# -----------------------
+# RICERCA BRANI
+# -----------------------
 
 async def ricerca(update, context):
 
@@ -192,13 +139,101 @@ async def ricerca(update, context):
 
     await update.message.reply_text(msg)
 
+# -----------------------
+# INSERIMENTO BRANO
+# -----------------------
+
+async def aggiungi(update, context):
+
+    await update.message.reply_text("Titolo del brano?")
+    return TITOLO
+
+
+async def titolo(update, context):
+
+    context.user_data["titolo"] = update.message.text
+    await update.message.reply_text("Autore?")
+    return AUTORE
+
+
+async def autore(update, context):
+
+    context.user_data["autore"] = update.message.text
+    await update.message.reply_text("Tipo voci (SATB / SSA / TTBB)?")
+    return VOCI
+
+
+async def voci(update, context):
+
+    context.user_data["voci"] = update.message.text
+    await update.message.reply_text("Numero copie?")
+    return COPIE
+
+
+async def copie(update, context):
+
+    testo = update.message.text
+
+    if not testo.isdigit():
+
+        await update.message.reply_text(
+            "Il numero copie deve essere un numero. Inserisci di nuovo."
+        )
+
+        return COPIE
+
+    copie = int(testo)
+
+    titolo = context.user_data["titolo"]
+    autore = context.user_data["autore"]
+    voci = context.user_data["voci"]
+
+    cursor.execute("""
+    INSERT INTO brani
+    (titolo, autore, voci, copie)
+    VALUES (?, ?, ?, ?)
+    """, (titolo, autore, voci, copie))
+
+    conn.commit()
+
+    await update.message.reply_text("Brano salvato!")
+
+    return ConversationHandler.END
+
+
+async def annulla(update, context):
+
+    await update.message.reply_text("Inserimento annullato")
+    return ConversationHandler.END
+
+# -----------------------
+# BOT
+# -----------------------
 
 app = ApplicationBuilder().token(TOKEN).build()
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT, menu_handler))
-app.add_handler(conv_handler)
+conv_handler = ConversationHandler(
 
+    entry_points=[MessageHandler(filters.Regex("➕ Aggiungi"), aggiungi)],
+
+    states={
+
+        TITOLO: [MessageHandler(filters.TEXT & ~filters.COMMAND, titolo)],
+        AUTORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, autore)],
+        VOCI: [MessageHandler(filters.TEXT & ~filters.COMMAND, voci)],
+        COPIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, copie)],
+
+    },
+
+    fallbacks=[CommandHandler("annulla", annulla)]
+
+)
+
+app.add_handler(CommandHandler("start", start))
+app.add_handler(conv_handler)
+app.add_handler(MessageHandler(filters.TEXT, menu_handler))
+app.add_handler(MessageHandler(filters.TEXT, ricerca))
+
+print("Bot avviato")
 
 app.run_polling()
-
