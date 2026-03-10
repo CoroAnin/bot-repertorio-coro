@@ -24,31 +24,30 @@ CREATE TABLE IF NOT EXISTS brani (
 id INTEGER PRIMARY KEY AUTOINCREMENT,
 titolo TEXT,
 autore TEXT,
-voci TEXT,
-copie INTEGER,
-note TEXT,
-link TEXT
+copie INTEGER
 )
 """)
 
 conn.commit()
 
 # -----------------------
-# MENU
+# MENU PRINCIPALE
 # -----------------------
 
 menu = [
-["📚 Repertorio", "🔎 Cerca"],
-["➕ Aggiungi", "📊 Statistiche"]
+["📚 Repertorio", "🔎 Cerca titolo"],
+["👤 Cerca autore", "➕ Aggiungi"],
+["✏️ Modifica copie", "📊 Statistiche"]
 ]
 
 reply_markup = ReplyKeyboardMarkup(menu, resize_keyboard=True)
 
 # -----------------------
-# STATI CONVERSAZIONE
+# STATI CONVERSAZIONI
 # -----------------------
 
-TITOLO, AUTORE, VOCI, COPIE = range(4)
+TITOLO, AUTORE, COPIE = range(3)
+MOD_TITOLO, MOD_NUM = range(3,5)
 
 # -----------------------
 # START
@@ -62,7 +61,7 @@ async def start(update, context):
     )
 
 # -----------------------
-# MENU PRINCIPALE
+# MENU
 # -----------------------
 
 async def menu_handler(update, context):
@@ -71,7 +70,7 @@ async def menu_handler(update, context):
 
     if text == "📚 Repertorio":
 
-        cursor.execute("SELECT titolo, autore FROM brani")
+        cursor.execute("SELECT titolo, autore, copie FROM brani ORDER BY titolo")
         brani = cursor.fetchall()
 
         if not brani:
@@ -81,9 +80,10 @@ async def menu_handler(update, context):
         msg = ""
 
         for b in brani:
-            msg += f"{b[0]} - {b[1]}\n"
+            msg += f"{b[0]} - {b[1]} | copie: {b[2]}\n"
 
         await update.message.reply_text(msg[:4000])
+
 
     elif text == "📊 Statistiche":
 
@@ -100,22 +100,26 @@ async def menu_handler(update, context):
             f"Brani totali: {totale}\nCopie spartiti: {copie}"
         )
 
-    elif text == "🔎 Cerca":
 
-        await update.message.reply_text(
-            "Scrivi una parola del titolo"
-        )
+    elif text == "🔎 Cerca titolo":
+
+        await update.message.reply_text("Scrivi il titolo")
+
+
+    elif text == "👤 Cerca autore":
+
+        await update.message.reply_text("Scrivi l'autore")
 
 # -----------------------
-# RICERCA BRANI
+# RICERCA TITOLO
 # -----------------------
 
-async def ricerca(update, context):
+async def ricerca_titolo(update, context):
 
     query = update.message.text
 
     cursor.execute(
-        "SELECT titolo, autore, voci, copie FROM brani WHERE titolo LIKE ?",
+        "SELECT titolo, autore, copie FROM brani WHERE titolo LIKE ?",
         ('%' + query + '%',)
     )
 
@@ -126,13 +130,7 @@ async def ricerca(update, context):
         msg = ""
 
         for r in risultati:
-
-            msg += (
-                f"TITOLO: {r[0]}\n"
-                f"AUTORE: {r[1]}\n"
-                f"VOCI: {r[2]}\n"
-                f"COPIE: {r[3]}\n\n"
-            )
+            msg += f"{r[0]} - {r[1]} | copie: {r[2]}\n"
 
     else:
         msg = "Nessun risultato"
@@ -140,7 +138,34 @@ async def ricerca(update, context):
     await update.message.reply_text(msg)
 
 # -----------------------
-# INSERIMENTO BRANO
+# RICERCA AUTORE
+# -----------------------
+
+async def ricerca_autore(update, context):
+
+    query = update.message.text
+
+    cursor.execute(
+        "SELECT titolo, copie FROM brani WHERE autore LIKE ?",
+        ('%' + query + '%',)
+    )
+
+    risultati = cursor.fetchall()
+
+    if risultati:
+
+        msg = ""
+
+        for r in risultati:
+            msg += f"{r[0]} | copie: {r[1]}\n"
+
+    else:
+        msg = "Nessun risultato"
+
+    await update.message.reply_text(msg)
+
+# -----------------------
+# AGGIUNTA BRANO
 # -----------------------
 
 async def aggiungi(update, context):
@@ -159,13 +184,6 @@ async def titolo(update, context):
 async def autore(update, context):
 
     context.user_data["autore"] = update.message.text
-    await update.message.reply_text("Tipo voci (SATB / SSA / TTBB)?")
-    return VOCI
-
-
-async def voci(update, context):
-
-    context.user_data["voci"] = update.message.text
     await update.message.reply_text("Numero copie?")
     return COPIE
 
@@ -177,7 +195,7 @@ async def copie(update, context):
     if not testo.isdigit():
 
         await update.message.reply_text(
-            "Il numero copie deve essere un numero. Inserisci di nuovo."
+            "Il numero copie deve essere un numero."
         )
 
         return COPIE
@@ -186,25 +204,137 @@ async def copie(update, context):
 
     titolo = context.user_data["titolo"]
     autore = context.user_data["autore"]
-    voci = context.user_data["voci"]
 
     cursor.execute("""
     INSERT INTO brani
-    (titolo, autore, voci, copie)
-    VALUES (?, ?, ?, ?)
-    """, (titolo, autore, voci, copie))
+    (titolo, autore, copie)
+    VALUES (?, ?, ?)
+    """, (titolo, autore, copie))
 
     conn.commit()
 
-    await update.message.reply_text("Brano salvato!")
+    await update.message.reply_text(
+        "Brano salvato!",
+        reply_markup=reply_markup
+    )
+
+    return ConversationHandler.END
+
+# -----------------------
+# MODIFICA COPIE
+# -----------------------
+
+async def modifica(update, context):
+
+    cursor.execute("SELECT titolo FROM brani ORDER BY titolo")
+    brani = cursor.fetchall()
+
+    if not brani:
+        await update.message.reply_text("Archivio vuoto")
+        return ConversationHandler.END
+
+    lista = []
+    riga = []
+
+    for b in brani:
+
+        riga.append(b[0])
+
+        if len(riga) == 2:
+            lista.append(riga)
+            riga = []
+
+    if riga:
+        lista.append(riga)
+
+    tastiera = ReplyKeyboardMarkup(lista, resize_keyboard=True)
+
+    await update.message.reply_text(
+        "Scegli il brano",
+        reply_markup=tastiera
+    )
+
+    return MOD_TITOLO
+
+
+async def mod_titolo(update, context):
+
+    titolo = update.message.text
+
+    cursor.execute(
+        "SELECT copie FROM brani WHERE titolo = ?",
+        (titolo,)
+    )
+
+    risultato = cursor.fetchone()
+
+    if not risultato:
+
+        await update.message.reply_text(
+            "Brano non trovato",
+            reply_markup=reply_markup
+        )
+
+        return ConversationHandler.END
+
+    context.user_data["titolo_mod"] = titolo
+
+    await update.message.reply_text(
+        "Quante copie aggiungere o togliere?\n(es: 5 oppure -3)",
+        reply_markup=reply_markup
+    )
+
+    return MOD_NUM
+
+
+async def mod_num(update, context):
+
+    testo = update.message.text
+
+    try:
+        delta = int(testo)
+    except:
+        await update.message.reply_text("Inserisci un numero valido")
+        return MOD_NUM
+
+    titolo = context.user_data["titolo_mod"]
+
+    cursor.execute(
+        "SELECT copie FROM brani WHERE titolo = ?",
+        (titolo,)
+    )
+
+    copie_attuali = cursor.fetchone()[0]
+
+    nuove = copie_attuali + delta
+
+    if nuove < 0:
+        nuove = 0
+
+    cursor.execute(
+        "UPDATE brani SET copie=? WHERE titolo=?",
+        (nuove, titolo)
+    )
+
+    conn.commit()
+
+    await update.message.reply_text(
+        f"Copie aggiornate: {nuove}",
+        reply_markup=reply_markup
+    )
 
     return ConversationHandler.END
 
 
 async def annulla(update, context):
 
-    await update.message.reply_text("Inserimento annullato")
+    await update.message.reply_text(
+        "Operazione annullata",
+        reply_markup=reply_markup
+    )
+
     return ConversationHandler.END
+
 
 # -----------------------
 # BOT
@@ -212,27 +342,38 @@ async def annulla(update, context):
 
 app = ApplicationBuilder().token(TOKEN).build()
 
-conv_handler = ConversationHandler(
+conv_add = ConversationHandler(
 
     entry_points=[MessageHandler(filters.Regex("➕ Aggiungi"), aggiungi)],
 
     states={
-
         TITOLO: [MessageHandler(filters.TEXT & ~filters.COMMAND, titolo)],
         AUTORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, autore)],
-        VOCI: [MessageHandler(filters.TEXT & ~filters.COMMAND, voci)],
         COPIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, copie)],
-
     },
 
     fallbacks=[CommandHandler("annulla", annulla)]
+)
 
+conv_mod = ConversationHandler(
+
+    entry_points=[MessageHandler(filters.Regex("✏️ Modifica copie"), modifica)],
+
+    states={
+        MOD_TITOLO: [MessageHandler(filters.TEXT & ~filters.COMMAND, mod_titolo)],
+        MOD_NUM: [MessageHandler(filters.TEXT & ~filters.COMMAND, mod_num)],
+    },
+
+    fallbacks=[CommandHandler("annulla", annulla)]
 )
 
 app.add_handler(CommandHandler("start", start))
-app.add_handler(conv_handler)
+app.add_handler(conv_add)
+app.add_handler(conv_mod)
+
 app.add_handler(MessageHandler(filters.TEXT, menu_handler))
-app.add_handler(MessageHandler(filters.TEXT, ricerca))
+app.add_handler(MessageHandler(filters.TEXT, ricerca_titolo))
+app.add_handler(MessageHandler(filters.TEXT, ricerca_autore))
 
 print("Bot avviato")
 
