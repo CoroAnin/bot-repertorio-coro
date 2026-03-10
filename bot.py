@@ -215,22 +215,36 @@ async def importa_csv(update, context):
     file = await update.message.document.get_file()
     contenuto = await file.download_as_bytearray()
 
-    testo = contenuto.decode("utf-8")
+    try:
+        testo = contenuto.decode("utf-8")
+    except:
+        testo = contenuto.decode("latin-1")
 
-    reader = csv.DictReader(StringIO(testo))
+    # prova a capire il separatore
+    if ";" in testo:
+        reader = csv.DictReader(StringIO(testo), delimiter=";")
+    else:
+        reader = csv.DictReader(StringIO(testo))
 
     count = 0
 
     for row in reader:
 
+        titolo = row.get("titolo")
+        autore = row.get("autore")
+        copie = row.get("copie")
+
+        if not titolo or not autore or not copie:
+            continue
+
         try:
-            copie = int(row["copie"])
+            copie = int(copie)
         except:
             continue
 
         cursor.execute(
             "INSERT INTO brani (titolo, autore, copie) VALUES (?, ?, ?)",
-            (row["titolo"], row["autore"], copie)
+            (titolo, autore, copie)
         )
 
         count += 1
@@ -240,7 +254,7 @@ async def importa_csv(update, context):
     attesa_csv.pop(user)
 
     await update.message.reply_text(
-        f"Importazione completata: {count} brani caricati."
+        f"Importazione completata.\nBrani caricati: {count}"
     )
 
 # -----------------------
@@ -456,3 +470,4 @@ app.add_handler(MessageHandler(filters.TEXT, ricerca))
 print("Bot avviato")
 
 app.run_polling()
+
