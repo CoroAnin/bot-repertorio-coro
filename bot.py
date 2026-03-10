@@ -37,7 +37,8 @@ conn.commit()
 menu = [
 ["📚 Repertorio", "🔎 Cerca titolo"],
 ["👤 Cerca autore", "➕ Aggiungi"],
-["✏️ Modifica copie", "📊 Statistiche"]
+["✏️ Modifica copie", "📊 Statistiche"],
+["ℹ️ Info"]
 ]
 
 reply_markup = ReplyKeyboardMarkup(menu, resize_keyboard=True)
@@ -103,25 +104,69 @@ async def menu_handler(update, context):
 
     elif text == "🔎 Cerca titolo":
 
+        context.user_data["ricerca"] = "titolo"
         await update.message.reply_text("Scrivi il titolo")
 
 
     elif text == "👤 Cerca autore":
 
+        context.user_data["ricerca"] = "autore"
         await update.message.reply_text("Scrivi l'autore")
 
+
+    elif text == "ℹ️ Info":
+
+        msg = """
+Questo bot serve per gestire il repertorio del coro.
+
+FUNZIONI PRINCIPALI
+
+📚 Repertorio
+Mostra tutti i brani con il numero di copie disponibili.
+
+🔎 Cerca titolo
+Trova un brano cercando una parola del titolo.
+
+👤 Cerca autore
+Mostra i brani di un determinato autore.
+
+➕ Aggiungi
+Permette di inserire un nuovo brano nel repertorio.
+
+✏️ Modifica copie
+Permette di aggiungere o togliere copie degli spartiti.
+
+📊 Statistiche
+Mostra il numero totale di brani e di spartiti disponibili.
+"""
+
+        await update.message.reply_text(msg)
+
 # -----------------------
-# RICERCA TITOLO
+# RICERCHE
 # -----------------------
 
-async def ricerca_titolo(update, context):
+async def ricerca(update, context):
 
+    if "ricerca" not in context.user_data:
+        return
+
+    tipo = context.user_data["ricerca"]
     query = update.message.text
 
-    cursor.execute(
-        "SELECT titolo, autore, copie FROM brani WHERE titolo LIKE ?",
-        ('%' + query + '%',)
-    )
+    if tipo == "titolo":
+
+        cursor.execute(
+            "SELECT titolo, autore, copie FROM brani WHERE titolo LIKE ?",
+            ('%' + query + '%',)
+        )
+
+    else:
+
+        cursor.execute(
+            "SELECT titolo, autore, copie FROM brani WHERE autore LIKE ?",
+            ('%' + query + '%',)
+        )
 
     risultati = cursor.fetchall()
 
@@ -137,32 +182,7 @@ async def ricerca_titolo(update, context):
 
     await update.message.reply_text(msg)
 
-# -----------------------
-# RICERCA AUTORE
-# -----------------------
-
-async def ricerca_autore(update, context):
-
-    query = update.message.text
-
-    cursor.execute(
-        "SELECT titolo, copie FROM brani WHERE autore LIKE ?",
-        ('%' + query + '%',)
-    )
-
-    risultati = cursor.fetchall()
-
-    if risultati:
-
-        msg = ""
-
-        for r in risultati:
-            msg += f"{r[0]} | copie: {r[1]}\n"
-
-    else:
-        msg = "Nessun risultato"
-
-    await update.message.reply_text(msg)
+    context.user_data.pop("ricerca")
 
 # -----------------------
 # AGGIUNTA BRANO
@@ -262,7 +282,7 @@ async def mod_titolo(update, context):
     titolo = update.message.text
 
     cursor.execute(
-        "SELECT copie FROM brani WHERE titolo = ?",
+        "SELECT copie FROM brani WHERE titolo=?",
         (titolo,)
     )
 
@@ -300,7 +320,7 @@ async def mod_num(update, context):
     titolo = context.user_data["titolo_mod"]
 
     cursor.execute(
-        "SELECT copie FROM brani WHERE titolo = ?",
+        "SELECT copie FROM brani WHERE titolo=?",
         (titolo,)
     )
 
@@ -334,7 +354,6 @@ async def annulla(update, context):
     )
 
     return ConversationHandler.END
-
 
 # -----------------------
 # BOT
@@ -372,8 +391,7 @@ app.add_handler(conv_add)
 app.add_handler(conv_mod)
 
 app.add_handler(MessageHandler(filters.TEXT, menu_handler))
-app.add_handler(MessageHandler(filters.TEXT, ricerca_titolo))
-app.add_handler(MessageHandler(filters.TEXT, ricerca_autore))
+app.add_handler(MessageHandler(filters.TEXT, ricerca))
 
 print("Bot avviato")
 
