@@ -75,6 +75,64 @@ async def menu_handler(update, context):
 
     text = update.message.text
 
+    # --- ricerca titolo attiva ---
+    if context.user_data.get("ricerca") == "titolo":
+
+        query = text
+
+        cursor.execute(
+            "SELECT titolo, autore, copie FROM brani WHERE titolo LIKE ?",
+            ('%' + query + '%',)
+        )
+
+        risultati = cursor.fetchall()
+
+        if risultati:
+
+            msg = ""
+            for r in risultati:
+                msg += f"{r[0]} - {r[1]} | copie: {r[2]}\n"
+
+        else:
+            msg = "Nessun risultato"
+
+        await update.message.reply_text(msg)
+
+        context.user_data.pop("ricerca")
+
+        return
+
+
+    # --- ricerca autore attiva ---
+    if context.user_data.get("ricerca") == "autore":
+
+        query = text
+
+        cursor.execute(
+            "SELECT titolo, autore, copie FROM brani WHERE autore LIKE ?",
+            ('%' + query + '%',)
+        )
+
+        risultati = cursor.fetchall()
+
+        if risultati:
+
+            msg = ""
+            for r in risultati:
+                msg += f"{r[0]} - {r[1]} | copie: {r[2]}\n"
+
+        else:
+            msg = "Nessun risultato"
+
+        await update.message.reply_text(msg)
+
+        context.user_data.pop("ricerca")
+
+        return
+
+
+    # -------- MENU --------
+
     if text == "📚 Repertorio":
 
         cursor.execute("SELECT titolo, autore, copie FROM brani ORDER BY titolo")
@@ -91,6 +149,25 @@ async def menu_handler(update, context):
 
         await update.message.reply_text(msg[:4000])
 
+
+    elif text == "🔎 Cerca titolo":
+
+        context.user_data["ricerca"] = "titolo"
+
+        await update.message.reply_text(
+            "Scrivi una parola del titolo"
+        )
+
+
+    elif text == "👤 Cerca autore":
+
+        context.user_data["ricerca"] = "autore"
+
+        await update.message.reply_text(
+            "Scrivi il nome dell'autore"
+        )
+
+
     elif text == "📊 Statistiche":
 
         cursor.execute("SELECT COUNT(*) FROM brani")
@@ -105,102 +182,6 @@ async def menu_handler(update, context):
         await update.message.reply_text(
             f"Brani totali: {totale}\nCopie spartiti: {copie}"
         )
-
-    elif text == "🔎 Cerca titolo":
-
-        context.user_data["ricerca"] = "titolo"
-        await update.message.reply_text("Scrivi il titolo")
-
-    elif text == "👤 Cerca autore":
-
-        context.user_data["ricerca"] = "autore"
-        await update.message.reply_text("Scrivi l'autore")
-
-    elif text == "📥 Importa CSV":
-
-        attesa_csv[update.effective_user.id] = True
-
-        await update.message.reply_text(
-            "Invia il file CSV con formato:\n"
-            "titolo,autore,copie"
-        )
-
-    elif text == "ℹ️ Info":
-
-        msg = """
-BOT REPERTORIO CORO
-
-FUNZIONI
-
-📚 Repertorio
-Mostra tutti i brani.
-
-🔎 Cerca titolo
-Ricerca per titolo.
-
-👤 Cerca autore
-Ricerca per autore.
-
-➕ Aggiungi
-Inserisce un nuovo brano.
-
-✏️ Modifica copie
-Aggiorna il numero di copie.
-
-🗑 Elimina brano
-Rimuove un brano dal repertorio.
-
-📥 Importa CSV
-Carica molti brani da file CSV.
-
-📊 Statistiche
-Mostra numero totale brani e copie.
-"""
-
-        await update.message.reply_text(msg)
-
-# -----------------------
-# RICERCA
-# -----------------------
-
-async def ricerca(update, context):
-
-    if "ricerca" not in context.user_data:
-        return
-
-    tipo = context.user_data["ricerca"]
-    query = update.message.text
-
-    if tipo == "titolo":
-
-        cursor.execute(
-            "SELECT titolo, autore, copie FROM brani WHERE titolo LIKE ?",
-            ('%' + query + '%',)
-        )
-
-    else:
-
-        cursor.execute(
-            "SELECT titolo, autore, copie FROM brani WHERE autore LIKE ?",
-            ('%' + query + '%',)
-        )
-
-    risultati = cursor.fetchall()
-
-    if risultati:
-
-        msg = ""
-
-        for r in risultati:
-            msg += f"{r[0]} - {r[1]} | copie: {r[2]}\n"
-
-    else:
-        msg = "Nessun risultato"
-
-    await update.message.reply_text(msg)
-
-    context.user_data.pop("ricerca")
-
 # -----------------------
 # IMPORT CSV
 # -----------------------
@@ -470,4 +451,5 @@ app.add_handler(MessageHandler(filters.TEXT, ricerca))
 print("Bot avviato")
 
 app.run_polling()
+
 
