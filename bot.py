@@ -39,8 +39,9 @@ conn.commit()
 menu = [
 ["📚 Repertorio", "🔎 Cerca titolo"],
 ["👤 Cerca autore", "➕ Aggiungi"],
-["✏️ Modifica copie", "📥 Importa CSV"],
-["📊 Statistiche", "ℹ️ Info"]
+["✏️ Modifica copie", "🗑 Elimina brano"],
+["📥 Importa CSV", "📊 Statistiche"],
+["ℹ️ Info"]
 ]
 
 reply_markup = ReplyKeyboardMarkup(menu, resize_keyboard=True)
@@ -51,6 +52,7 @@ reply_markup = ReplyKeyboardMarkup(menu, resize_keyboard=True)
 
 TITOLO, AUTORE, COPIE = range(3)
 MOD_TITOLO, MOD_NUM = range(3,5)
+DEL_BRANO = 5
 
 attesa_csv = {}
 
@@ -119,7 +121,7 @@ async def menu_handler(update, context):
         attesa_csv[update.effective_user.id] = True
 
         await update.message.reply_text(
-            "Invia il file CSV con formato:\n\n"
+            "Invia il file CSV con formato:\n"
             "titolo,autore,copie"
         )
 
@@ -128,25 +130,28 @@ async def menu_handler(update, context):
         msg = """
 BOT REPERTORIO CORO
 
-Funzioni principali
+FUNZIONI
 
 📚 Repertorio
-Mostra tutti i brani con numero copie.
+Mostra tutti i brani.
 
 🔎 Cerca titolo
-Trova brani per titolo.
+Ricerca per titolo.
 
 👤 Cerca autore
-Trova brani per autore.
+Ricerca per autore.
 
 ➕ Aggiungi
 Inserisce un nuovo brano.
 
 ✏️ Modifica copie
-Aggiorna il numero copie.
+Aggiorna il numero di copie.
+
+🗑 Elimina brano
+Rimuove un brano dal repertorio.
 
 📥 Importa CSV
-Permette di caricare molti brani da file CSV.
+Carica molti brani da file CSV.
 
 📊 Statistiche
 Mostra numero totale brani e copie.
@@ -218,9 +223,6 @@ async def importa_csv(update, context):
 
     for row in reader:
 
-        titolo = row["titolo"]
-        autore = row["autore"]
-
         try:
             copie = int(row["copie"])
         except:
@@ -228,7 +230,7 @@ async def importa_csv(update, context):
 
         cursor.execute(
             "INSERT INTO brani (titolo, autore, copie) VALUES (?, ?, ?)",
-            (titolo, autore, copie)
+            (row["titolo"], row["autore"], copie)
         )
 
         count += 1
@@ -267,18 +269,14 @@ async def autore(update, context):
 
 async def copie(update, context):
 
-    testo = update.message.text
-
-    if not testo.isdigit():
+    if not update.message.text.isdigit():
 
         await update.message.reply_text("Il numero copie deve essere un numero.")
         return COPIE
 
-    copie = int(testo)
-
     cursor.execute(
         "INSERT INTO brani (titolo, autore, copie) VALUES (?, ?, ?)",
-        (context.user_data["titolo"], context.user_data["autore"], copie)
+        (context.user_data["titolo"], context.user_data["autore"], int(update.message.text))
     )
 
     conn.commit()
@@ -322,9 +320,7 @@ async def modifica(update, context):
 
 async def mod_titolo(update, context):
 
-    titolo = update.message.text
-
-    context.user_data["titolo_mod"] = titolo
+    context.user_data["titolo_mod"] = update.message.text
 
     await update.message.reply_text(
         "Quante copie aggiungere o togliere? (es: 5 oppure -3)"
@@ -343,17 +339,10 @@ async def mod_num(update, context):
 
     titolo = context.user_data["titolo_mod"]
 
-    cursor.execute(
-        "SELECT copie FROM brani WHERE titolo=?",
-        (titolo,)
-    )
-
+    cursor.execute("SELECT copie FROM brani WHERE titolo=?", (titolo,))
     copie_attuali = cursor.fetchone()[0]
 
-    nuove = copie_attuali + delta
-
-    if nuove < 0:
-        nuove = 0
+    nuove = max(0, copie_attuali + delta)
 
     cursor.execute(
         "UPDATE brani SET copie=? WHERE titolo=?",
@@ -370,33 +359,86 @@ async def mod_num(update, context):
     return ConversationHandler.END
 
 # -----------------------
+# ELIMINA BRANO
+# -----------------------
+
+async def elimina(update, context):
+
+    cursor.execute("SELECT titolo FROM brani ORDER BY titolo")
+    brani = cursor.fetchall()
+
+    lista = []
+    riga = []
+
+    for b in brani:
+
+        riga.append(b[0])
+
+        if len(riga) == 2:
+            lista.append(riga)
+            riga = []
+
+    if riga:
+        lista.append(riga)
+
+    tastiera = ReplyKeyboardMarkup(lista, resize_keyboard=True)
+
+    await update.message.reply_text(
+        "Seleziona il brano da eliminare",
+        reply_markup=tastiera
+    )
+
+    return DEL_BRANO
+
+
+async def elimina_brano(update, context):
+
+    titolo = update.message.text
+
+    cursor.execute(
+        "DELETE FROM brani WHERE titolo=?",
+        (titolo,)
+    )
+
+    conn.commit()
+
+    await update.message.reply_text(
+        f"Brano eliminato: {titolo}",
+        reply_markup=reply_markup
+    )
+
+    return ConversationHandler.END
+
+# -----------------------
 # BOT
 # -----------------------
 
 app = ApplicationBuilder().token(TOKEN).build()
 
 conv_add = ConversationHandler(
-
     entry_points=[MessageHandler(filters.Regex("➕ Aggiungi"), aggiungi)],
-
     states={
         TITOLO: [MessageHandler(filters.TEXT & ~filters.COMMAND, titolo)],
         AUTORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, autore)],
         COPIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, copie)],
     },
-
     fallbacks=[]
 )
 
 conv_mod = ConversationHandler(
-
     entry_points=[MessageHandler(filters.Regex("✏️ Modifica copie"), modifica)],
-
     states={
         MOD_TITOLO: [MessageHandler(filters.TEXT & ~filters.COMMAND, mod_titolo)],
         MOD_NUM: [MessageHandler(filters.TEXT & ~filters.COMMAND, mod_num)],
     },
+    fallbacks=[]
+)
 
+conv_del = ConversationHandler(
+    entry_points=[MessageHandler(filters.Regex("🗑 Elimina brano"), elimina)],
+    states={
+        DEL_BRANO: [MessageHandler(filters.TEXT & ~filters.COMMAND, elimina_brano)],
+    },
     fallbacks=[]
 )
 
@@ -404,6 +446,7 @@ app.add_handler(CommandHandler("start", start))
 
 app.add_handler(conv_add)
 app.add_handler(conv_mod)
+app.add_handler(conv_del)
 
 app.add_handler(MessageHandler(filters.Document.ALL, importa_csv))
 
