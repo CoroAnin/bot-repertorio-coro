@@ -5,6 +5,75 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 import os
 TOKEN = os.getenv("TOKEN")
 
+from telegram.ext import ConversationHandler
+TITOLO, AUTORE, VOCI, COPIE = range(6)
+async def aggiungi(update, context):
+
+    await update.message.reply_text("Titolo del brano?")
+    return TITOLO
+
+async def titolo(update, context):
+
+    context.user_data["titolo"] = update.message.text
+    await update.message.reply_text("Autore?")
+    return AUTORE
+
+async def autore(update, context):
+
+    context.user_data["autore"] = update.message.text
+    await update.message.reply_text("Lingua?")
+    return LINGUA
+
+async def voci(update, context):
+
+    context.user_data["voci"] = update.message.text
+    await update.message.reply_text("Tonalità?")
+    return TONALITA
+
+async def copie(update, context):
+
+    copie = update.message.text
+
+    titolo = context.user_data["titolo"]
+    autore = context.user_data["autore"]
+    lingua = context.user_data["lingua"]
+    voci = context.user_data["voci"]
+    tonalita = context.user_data["tonalita"]
+
+    cursor.execute("""
+    INSERT INTO brani
+    (titolo, autore, lingua, voci, tonalita, copie)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """, (titolo, autore, lingua, voci, tonalita, copie))
+
+    conn.commit()
+
+    await update.message.reply_text("Brano salvato!")
+
+    return ConversationHandler.END
+
+async def annulla(update, context):
+
+    await update.message.reply_text("Inserimento annullato")
+    return ConversationHandler.END
+
+conv_handler = ConversationHandler(
+    entry_points=[MessageHandler(filters.Regex("➕ Aggiungi"), aggiungi)],
+
+    states={
+
+        TITOLO: [MessageHandler(filters.TEXT & ~filters.COMMAND, titolo)],
+        AUTORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, autore)],
+        LINGUA: [MessageHandler(filters.TEXT & ~filters.COMMAND, lingua)],
+        VOCI: [MessageHandler(filters.TEXT & ~filters.COMMAND, voci)],
+        TONALITA: [MessageHandler(filters.TEXT & ~filters.COMMAND, tonalita)],
+        COPIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, copie)],
+
+    },
+
+    fallbacks=[CommandHandler("annulla", annulla)]
+)
+
 conn = sqlite3.connect("repertorio.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -91,6 +160,7 @@ async def menu_handler(update, context):
         await update.message.reply_text(
             "Scrivi tipo voci (SATB / SSA / TTBB)"
         )
+        
 
 
 async def ricerca(update, context):
@@ -127,6 +197,8 @@ app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT, menu_handler))
+app.add_handler(conv_handler)
 
 
 app.run_polling()
+
