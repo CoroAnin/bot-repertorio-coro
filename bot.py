@@ -37,8 +37,7 @@ conn.commit()
 # -----------------------
 
 menu = [
-["📚 Repertorio", "🔎 Cerca titolo"],
-["👤 Cerca autore", "➕ Aggiungi"],
+["📚 Repertorio", "➕ Aggiungi"],
 ["✏️ Modifica copie", "🗑 Elimina brano"],
 ["📥 Importa CSV", "📊 Statistiche"],
 ["ℹ️ Info"]
@@ -75,64 +74,6 @@ async def menu_handler(update, context):
 
     text = update.message.text
 
-    # --- ricerca titolo attiva ---
-    if context.user_data.get("ricerca") == "titolo":
-
-        query = text
-
-        cursor.execute(
-            "SELECT titolo, autore, copie FROM brani WHERE titolo LIKE ?",
-            ('%' + query + '%',)
-        )
-
-        risultati = cursor.fetchall()
-
-        if risultati:
-
-            msg = ""
-            for r in risultati:
-                msg += f"{r[0]} - {r[1]} | copie: {r[2]}\n"
-
-        else:
-            msg = "Nessun risultato"
-
-        await update.message.reply_text(msg)
-
-        context.user_data.pop("ricerca")
-
-        return
-
-
-    # --- ricerca autore attiva ---
-    if context.user_data.get("ricerca") == "autore":
-
-        query = text
-
-        cursor.execute(
-            "SELECT titolo, autore, copie FROM brani WHERE autore LIKE ?",
-            ('%' + query + '%',)
-        )
-
-        risultati = cursor.fetchall()
-
-        if risultati:
-
-            msg = ""
-            for r in risultati:
-                msg += f"{r[0]} - {r[1]} | copie: {r[2]}\n"
-
-        else:
-            msg = "Nessun risultato"
-
-        await update.message.reply_text(msg)
-
-        context.user_data.pop("ricerca")
-
-        return
-
-
-    # -------- MENU --------
-
     if text == "📚 Repertorio":
 
         cursor.execute("SELECT titolo, autore, copie FROM brani ORDER BY titolo")
@@ -149,25 +90,6 @@ async def menu_handler(update, context):
 
         await update.message.reply_text(msg[:4000])
 
-
-    elif text == "🔎 Cerca titolo":
-
-        context.user_data["ricerca"] = "titolo"
-
-        await update.message.reply_text(
-            "Scrivi una parola del titolo"
-        )
-
-
-    elif text == "👤 Cerca autore":
-
-        context.user_data["ricerca"] = "autore"
-
-        await update.message.reply_text(
-            "Scrivi il nome dell'autore"
-        )
-
-
     elif text == "📊 Statistiche":
 
         cursor.execute("SELECT COUNT(*) FROM brani")
@@ -182,6 +104,87 @@ async def menu_handler(update, context):
         await update.message.reply_text(
             f"Brani totali: {totale}\nCopie spartiti: {copie}"
         )
+
+    elif text == "📥 Importa CSV":
+
+        attesa_csv[update.effective_user.id] = True
+
+        await update.message.reply_text(
+            "Invia il file CSV con formato:\n"
+            "titolo,autore,copie"
+        )
+
+    elif text == "ℹ️ Info":
+
+        msg = """
+BOT REPERTORIO CORO
+
+FUNZIONI
+
+📚 Repertorio
+Mostra tutti i brani.
+
+Scrivi direttamente:
+• una parola del titolo
+• il nome di un autore
+
+Il bot cercherà automaticamente nel repertorio.
+
+➕ Aggiungi
+Inserisce un nuovo brano.
+
+✏️ Modifica copie
+Aggiorna il numero copie.
+
+🗑 Elimina brano
+Rimuove un brano dal repertorio.
+
+📥 Importa CSV
+Carica molti brani da file CSV.
+
+📊 Statistiche
+Mostra numero totale brani e copie.
+"""
+
+        await update.message.reply_text(msg)
+
+# -----------------------
+# RICERCA INTELLIGENTE
+# -----------------------
+
+async def ricerca(update, context):
+
+    text = update.message.text
+
+    if text in [
+        "📚 Repertorio",
+        "➕ Aggiungi",
+        "✏️ Modifica copie",
+        "🗑 Elimina brano",
+        "📥 Importa CSV",
+        "📊 Statistiche",
+        "ℹ️ Info"
+    ]:
+        return
+
+    cursor.execute(
+        """SELECT titolo, autore, copie FROM brani
+        WHERE titolo LIKE ? OR autore LIKE ?
+        ORDER BY titolo""",
+        ('%' + text + '%', '%' + text + '%')
+    )
+
+    risultati = cursor.fetchall()
+
+    if risultati:
+
+        msg = ""
+
+        for r in risultati:
+            msg += f"{r[0]} - {r[1]} | copie: {r[2]}\n"
+
+        await update.message.reply_text(msg)
+
 # -----------------------
 # IMPORT CSV
 # -----------------------
@@ -201,7 +204,6 @@ async def importa_csv(update, context):
     except:
         testo = contenuto.decode("latin-1")
 
-    # prova a capire il separatore
     if ";" in testo:
         reader = csv.DictReader(StringIO(testo), delimiter=";")
     else:
@@ -211,21 +213,14 @@ async def importa_csv(update, context):
 
     for row in reader:
 
-        titolo = row.get("titolo")
-        autore = row.get("autore")
-        copie = row.get("copie")
-
-        if not titolo or not autore or not copie:
-            continue
-
         try:
-            copie = int(copie)
+            copie = int(row["copie"])
         except:
             continue
 
         cursor.execute(
             "INSERT INTO brani (titolo, autore, copie) VALUES (?, ?, ?)",
-            (titolo, autore, copie)
+            (row["titolo"], row["autore"], copie)
         )
 
         count += 1
@@ -276,7 +271,10 @@ async def copie(update, context):
 
     conn.commit()
 
-    await update.message.reply_text("Brano salvato!", reply_markup=reply_markup)
+    await update.message.reply_text(
+        "Brano salvato!",
+        reply_markup=reply_markup
+    )
 
     return ConversationHandler.END
 
@@ -451,5 +449,3 @@ app.add_handler(MessageHandler(filters.TEXT, ricerca))
 print("Bot avviato")
 
 app.run_polling()
-
-
