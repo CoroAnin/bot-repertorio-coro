@@ -34,6 +34,7 @@ copie INTEGER
 )
 """)
 
+# aggiunta tipologia se non esiste
 try:
     cursor.execute("ALTER TABLE brani ADD COLUMN tipologia TEXT")
 except:
@@ -111,7 +112,7 @@ def mostra_pagina(update, context):
     update.message.reply_text(msg, reply_markup=keyboard)
 
 # -----------------------
-# MENU HANDLER (solo menu)
+# MENU
 # -----------------------
 
 async def menu_handler(update, context):
@@ -194,18 +195,17 @@ async def menu_handler(update, context):
     elif text == "ℹ️ Info":
 
         await update.message.reply_text(
-            "Scrivi titolo o autore per cercare.\nUsa i filtri per navigare."
+            "Scrivi titolo o autore per cercare.\nUsa i filtri."
         )
 
 # -----------------------
-# RICERCA (non interferisce con conversazioni)
+# RICERCA
 # -----------------------
 
 async def ricerca(update, context):
 
     text = update.message.text
 
-    # ignora menu e comandi
     if text in sum(menu, []) or text in ["⬅️", "➡️"]:
         return
 
@@ -269,7 +269,7 @@ async def importa_csv(update, context):
     await update.message.reply_text(f"Importati {count} brani")
 
 # -----------------------
-# AGGIUNTA BRANO (robusta)
+# AGGIUNTA BRANO
 # -----------------------
 
 async def aggiungi(update, context):
@@ -305,9 +305,7 @@ async def copie(update, context):
 
 async def tipologia(update, context):
 
-    tipologia = update.message.text
-
-    if tipologia not in TIPOLOGIE:
+    if update.message.text not in TIPOLOGIE:
         await update.message.reply_text("Seleziona una tipologia valida")
         return TIPOLOGIA
 
@@ -317,7 +315,7 @@ async def tipologia(update, context):
             context.user_data["titolo"],
             context.user_data["autore"],
             context.user_data["copie"],
-            tipologia
+            update.message.text
         )
     )
 
@@ -347,11 +345,11 @@ conv_add = ConversationHandler(
     fallbacks=[]
 )
 
-# ordine handler IMPORTANTISSIMO
-app.add_handler(conv_add)
-app.add_handler(MessageHandler(filters.Document.ALL, importa_csv))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, ricerca))
+# ordine corretto
+app.add_handler(conv_add, group=1)
+app.add_handler(MessageHandler(filters.Document.ALL, importa_csv), group=2)
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler), group=3)
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, ricerca), group=4)
 
 app.add_handler(CommandHandler("start", start))
 
