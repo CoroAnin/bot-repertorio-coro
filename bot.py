@@ -16,7 +16,7 @@ from telegram.ext import (
 TOKEN = os.getenv("TOKEN")
 
 PAGE_SIZE = 10
-TIPOLOGIE = ["Natale", "Pasqua", "Ordinario", "Concerto"]
+TIPOLOGIE = ["Natale", "Contemporaneo", "Popolare", "Sacro"]
 
 # -----------------------
 # DATABASE
