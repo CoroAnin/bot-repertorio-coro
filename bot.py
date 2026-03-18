@@ -16,7 +16,6 @@ from telegram.ext import (
 TOKEN = os.getenv("TOKEN")
 
 PAGE_SIZE = 10
-
 TIPOLOGIE = ["Natale", "Pasqua", "Ordinario", "Concerto"]
 
 # -----------------------
@@ -35,14 +34,12 @@ copie INTEGER
 )
 """)
 
-# aggiunta colonna tipologia se non esiste
 try:
     cursor.execute("ALTER TABLE brani ADD COLUMN tipologia TEXT")
 except:
     pass
 
 cursor.execute("CREATE INDEX IF NOT EXISTS idx_titolo ON brani(titolo)")
-
 conn.commit()
 
 # -----------------------
@@ -114,7 +111,7 @@ def mostra_pagina(update, context):
     update.message.reply_text(msg, reply_markup=keyboard)
 
 # -----------------------
-# MENU
+# MENU HANDLER (solo menu)
 # -----------------------
 
 async def menu_handler(update, context):
@@ -157,7 +154,6 @@ async def menu_handler(update, context):
 
         context.user_data["valore"] = text
         context.user_data["pagina"] = 0
-
         mostra_pagina(update, context)
 
     elif text == "Iniziale":
@@ -176,7 +172,6 @@ async def menu_handler(update, context):
 
         context.user_data["valore"] = text
         context.user_data["pagina"] = 0
-
         mostra_pagina(update, context)
 
     elif text == "📊 Statistiche":
@@ -199,18 +194,19 @@ async def menu_handler(update, context):
     elif text == "ℹ️ Info":
 
         await update.message.reply_text(
-            "Usa il menu o scrivi titolo/autore per cercare."
+            "Scrivi titolo o autore per cercare.\nUsa i filtri per navigare."
         )
 
 # -----------------------
-# RICERCA INTELLIGENTE
+# RICERCA (non interferisce con conversazioni)
 # -----------------------
 
 async def ricerca(update, context):
 
     text = update.message.text
 
-    if text in ["📚 Repertorio", "🔎 Filtri", "📥 Importa CSV"]:
+    # ignora menu e comandi
+    if text in sum(menu, []) or text in ["⬅️", "➡️"]:
         return
 
     cursor.execute(
@@ -255,7 +251,6 @@ async def importa_csv(update, context):
     count = 0
 
     for row in reader:
-
         try:
             copie = int(row["copie"])
         except:
@@ -274,7 +269,7 @@ async def importa_csv(update, context):
     await update.message.reply_text(f"Importati {count} brani")
 
 # -----------------------
-# AGGIUNTA BRANO
+# AGGIUNTA BRANO (robusta)
 # -----------------------
 
 async def aggiungi(update, context):
@@ -312,6 +307,10 @@ async def tipologia(update, context):
 
     tipologia = update.message.text
 
+    if tipologia not in TIPOLOGIE:
+        await update.message.reply_text("Seleziona una tipologia valida")
+        return TIPOLOGIA
+
     cursor.execute(
         "INSERT INTO brani (titolo, autore, copie, tipologia) VALUES (?, ?, ?, ?)",
         (
@@ -324,7 +323,10 @@ async def tipologia(update, context):
 
     conn.commit()
 
-    await update.message.reply_text("Brano salvato!", reply_markup=reply_markup)
+    await update.message.reply_text(
+        "Brano salvato!",
+        reply_markup=reply_markup
+    )
 
     return ConversationHandler.END
 
@@ -335,24 +337,24 @@ async def tipologia(update, context):
 app = ApplicationBuilder().token(TOKEN).build()
 
 conv_add = ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("➕ Aggiungi"), aggiungi)],
+    entry_points=[MessageHandler(filters.Regex("^➕ Aggiungi$"), aggiungi)],
     states={
         TITOLO: [MessageHandler(filters.TEXT & ~filters.COMMAND, titolo)],
         AUTORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, autore)],
         COPIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, copie)],
-        TIPOLOGIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, tipologia)],
+        TIPOLOGIA: [MessageHandler(filters.Regex(f"^({'|'.join(TIPOLOGIE)})$"), tipologia)],
     },
     fallbacks=[]
 )
 
-app.add_handler(CommandHandler("start", lambda u, c: u.message.reply_text("Bot attivo", reply_markup=reply_markup)))
-
+# ordine handler IMPORTANTISSIMO
 app.add_handler(conv_add)
-
 app.add_handler(MessageHandler(filters.Document.ALL, importa_csv))
-app.add_handler(MessageHandler(filters.TEXT, menu_handler))
-app.add_handler(MessageHandler(filters.TEXT, ricerca))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, ricerca))
 
-print("Bot con tipologia attivo")
+app.add_handler(CommandHandler("start", start))
+
+print("Bot stabile avviato")
 
 app.run_polling()
