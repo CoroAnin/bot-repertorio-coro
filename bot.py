@@ -66,10 +66,11 @@ DEL_BRANO = 6
 attesa_csv = {}
 
 # -----------------------
-# ANNULLA
+# ANNULLA UNIVERSALE
 # -----------------------
 
 async def annulla(update, context):
+    context.user_data.clear()
     await update.message.reply_text(
         "Operazione annullata",
         reply_markup=reply_markup
@@ -93,6 +94,10 @@ async def start(update, context):
 async def menu_handler(update, context):
 
     text = update.message.text
+
+    # ANNULLA globale
+    if text == "❌ Annulla":
+        return await annulla(update, context)
 
     if text == "📚 Repertorio":
 
@@ -207,7 +212,7 @@ async def ricerca(update, context):
 
     text = update.message.text
 
-    if text in sum(menu, []) or text == "❌ Annulla":
+    if text in sum(menu, []) or text == "❌ Annulla" or text in TIPOLOGIE:
         return
 
     cursor.execute(
@@ -332,7 +337,19 @@ async def modifica(update, context):
     cursor.execute("SELECT titolo FROM brani ORDER BY titolo")
     brani = cursor.fetchall()
 
-    lista = [list(brani[i:i+2]) for i in range(0, len(brani), 2)]
+    lista = []
+    riga = []
+
+    for b in brani:
+        riga.append(b[0])
+
+        if len(riga) == 2:
+            lista.append(riga)
+            riga = []
+
+    if riga:
+        lista.append(riga)
+
     lista.append(["❌ Annulla"])
 
     tastiera = ReplyKeyboardMarkup(lista, resize_keyboard=True)
@@ -398,7 +415,19 @@ async def elimina(update, context):
     cursor.execute("SELECT titolo FROM brani ORDER BY titolo")
     brani = cursor.fetchall()
 
-    lista = [list(brani[i:i+2]) for i in range(0, len(brani), 2)]
+    lista = []
+    riga = []
+
+    for b in brani:
+        riga.append(b[0])
+
+        if len(riga) == 2:
+            lista.append(riga)
+            riga = []
+
+    if riga:
+        lista.append(riga)
+
     lista.append(["❌ Annulla"])
 
     tastiera = ReplyKeyboardMarkup(lista, resize_keyboard=True)
